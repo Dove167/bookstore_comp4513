@@ -1,34 +1,100 @@
 @page "/checkout"
 @using Microsoft.EntityFrameworkCore
 @implements IAsyncDisposable
-@inject OrderState OrderState
+@inject CartService CartService
 @inject NavigationManager NavigationManager
 @inject IDbContextFactory<BookstoreDb> DbFactory
-@inject CartService CartService
 @rendermode InteractiveServer
 
 <PageTitle>Bookstore - Checkout</PageTitle>
 
-<h1>Bookstore - Checkout</h1>
+<div class="container py-5">
+    @if (CartService.Items.Any())
+    {
+        <h1 class="mb-4">Checkout</h1>
 
-@if (Order.OrderItems.Any())
-{
-    <dl>
-        @foreach (var item in Order.OrderItems)
-        {
-            <dt>@item.Book.Title</dt>
-            <dd>@item.Quantity x @item.Book.Price.ToString("C")</dd>
-        }
-    </dl>
-    <p>Total: @Order.GetTotal().ToString("C")</p>
-    <button @onclick="PlaceOrder">Place Order</button>
-}
+        <div class="row">
+            <div class="col-md-8">
+                <div class="card border-0 shadow-sm rounded-3 mb-4">
+                    <div class="card-body p-4">
+                        <h5 class="card-title mb-4">Order Summary</h5>
+                        <dl class="row mb-0">
+                            @foreach (var item in CartService.Items)
+                            {
+                                <dt class="col-8">@item.Book.Title</dt>
+                                <dd class="col-4 text-end">@item.Quantity x @item.Book.Price.ToString("C")</dd>
+                            }
+                        </dl>
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm rounded-3 mb-4">
+                    <div class="card-body p-4">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <div>
+                                <span class="text-muted">Wallet Balance:</span>
+                                <span class="fw-bold ms-2">$@CartService.WalletBalance.ToString("F2")</span>
+                            </div>
+                            <div class="text-end">
+                                <span class="text-muted fs-5">Total:</span>
+                                <span class="fw-bold fs-4 ms-2">@CartService.GetCartTotal().ToString("C")</span>
+                            </div>
+                        </div>
+
+                        @if (CartService.GetCartTotal() > CartService.WalletBalance)
+                        {
+                            <div class="alert alert-danger mt-3 mb-0">
+                                <i class="bi bi-exclamation-triangle me-2"></i>
+                                Insufficient funds. Please add money to your wallet.
+                            </div>
+                        }
+                    </div>
+                </div>
+
+                <div class="d-flex gap-3">
+                    <a href="/cart" class="btn btn-outline-secondary">
+                        <i class="bi bi-arrow-left me-2"></i>Back to Cart
+                    </a>
+                    <button class="btn btn-success btn-lg px-5" @onclick="PlaceOrder" disabled="@(CartService.GetCartTotal() > CartService.WalletBalance)">
+                        <i class="bi bi-credit-card me-2"></i>Place Order
+                    </button>
+                </div>
+            </div>
+
+            <div class="col-md-4">
+                <div class="card border-0 shadow-sm rounded-3 bg-light">
+                    <div class="card-body p-4">
+                        <h5 class="card-title mb-3">Order Total</h5>
+                        <div class="d-flex justify-content-between mb-2">
+                            <span>Subtotal (@CartService.Items.Sum(i => i.Quantity) items)</span>
+                            <span>@CartService.GetCartTotal().ToString("C")</span>
+                        </div>
+                        <hr>
+                        <div class="d-flex justify-content-between fw-bold fs-5">
+                            <span>Total</span>
+                            <span>@CartService.GetCartTotal().ToString("C")</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="text-center py-5">
+            <i class="bi bi-cart-x text-muted" style="font-size: 4rem;"></i>
+            <h3 class="mt-3">Your cart is empty</h3>
+            <p class="text-muted">Add some books to your cart before checking out.</p>
+            <a href="/" class="btn btn-primary mt-3">
+                <i class="bi bi-book me-2"></i>Browse Books
+            </a>
+        </div>
+    }
+</div>
 
 @code {
 
     private BookstoreDb? context { get; set; }
-
-    private Order Order => OrderState.Order;
 
     protected override async Task OnInitializedAsync()
     {
@@ -37,16 +103,30 @@
 
     private async Task PlaceOrder()
     {
-        if (context is null) return;
-        foreach (var item in Order.OrderItems)
+        if (context is null || !CartService.Items.Any()) return;
+
+        var order = new Order
         {
-            context.Entry(item.Book).State = EntityState.Unchanged;
+            OrderDate = DateTime.Now,
+            OrderItems = CartService.Items.Select(i => new OrderItem
+            {
+                BookId = i.Book.Id,
+                Quantity = i.Quantity,
+                TotalPrice = i.Book.Price * i.Quantity
+            }).ToList()
+        };
+
+        foreach (var item in order.OrderItems)
+        {
+            var book = await context.Books.FindAsync(item.BookId);
+            if (book != null) context.Books.Attach(book);
             context.OrderItems.Add(item);
         }
-        Order.OrderDate = DateTime.Now;
-        context.Orders.Add(Order);
+
+        context.Orders.Add(order);
         await context.SaveChangesAsync();
-        CartService.ClearCart();
+
+        CartService.Checkout();
         NavigationManager.NavigateTo("/");
     }
 

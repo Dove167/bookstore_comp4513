@@ -1,0 +1,97 @@
+@page "/genre/{genreName}"
+@rendermode InteractiveServer
+@inject IDbContextFactory<BookstoreDb> DbFactory
+
+<PageTitle>@genreName - Bookstore</PageTitle>
+
+<div class="container py-5">
+    @if (isLoading)
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status"></div>
+            <p class="mt-3 text-muted">Loading...</p>
+        </div>
+    }
+    else if (books is null || books.Count == 0)
+    {
+        <div class="text-center py-5">
+            <i class="bi bi-search text-muted" style="font-size: 4rem;"></i>
+            <h3 class="mt-3">No books found</h3>
+            <p class="text-muted">No books match this genre.</p>
+            <a href="/" class="btn btn-outline-primary mt-3">
+                <i class="bi bi-arrow-left me-2"></i>Back to Home
+            </a>
+        </div>
+    }
+    else
+    {
+        <div class="mb-5">
+            <div class="d-flex align-items-center gap-3 mb-2">
+                <a href="/" class="text-decoration-none text-muted">
+                    <i class="bi bi-house"></i>
+                </a>
+                <span class="text-muted">/</span>
+                <span class="text-muted">Genre</span>
+            </div>
+            <h1 class="display-4 fw-bold mb-3">
+                <span class="badge bg-primary rounded-3 px-3 py-2">
+                    <i class="bi bi-tag me-2"></i>@genreName
+                </span>
+            </h1>
+            <p class="text-muted fs-5">@(books.Count) @(books.Count == 1 ? "book" : "books") in this genre</p>
+        </div>
+
+        <div class="row g-4">
+            @foreach (var book in books)
+            {
+                <div class="col-sm-6 col-md-4 col-lg-3">
+                    <div class="card h-100 border-0 shadow-sm rounded-3 overflow-hidden">
+                        <div class="position-relative">
+                            @if (!string.IsNullOrEmpty(book.CoverImageUrl))
+                            {
+                                <a href="/books/@book.Id">
+                                    <img src="@book.CoverImageUrl" alt="@book.Title" class="card-img-top object-fit-cover" style="height: 200px;">
+                                </a>
+                            }
+                            else
+                            {
+                                <div class="d-flex align-items-center justify-content-center bg-light" style="height: 200px;">
+                                    <i class="bi bi-book text-muted" style="font-size: 3rem;"></i>
+                                </div>
+                            }
+                        </div>
+                        <div class="card-body">
+                            <h6 class="card-title fw-bold text-truncate">@book.Title</h6>
+                            <p class="text-muted small mb-2">by @book.Author</p>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <span class="text-primary fw-bold">@book.Price.ToString("C")</span>
+                                <a href="/books/@book.Id" class="btn btn-sm btn-outline-primary">
+                                    View
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string genreName { get; set; } = "";
+
+    private List<Book>? books;
+    private bool isLoading = true;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        isLoading = true;
+        using var context = await DbFactory.CreateDbContextAsync();
+        books = await context.Books
+            .Where(b => b.Genre == genreName)
+            .OrderBy(b => b.Title)
+            .ToListAsync();
+        isLoading = false;
+    }
+}
